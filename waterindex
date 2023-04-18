@@ -1,0 +1,156 @@
+// Water Index Control
+// by Firman Raharjo
+// Swiss German University
+
+
+#include "EasyNextionLibrary.h"
+EasyNex myNex(Serial1);
+
+#define BLYNK_TEMPLATE_ID "TMPLHX-EKv4L"
+#define BLYNK_TEMPLATE_NAME "Quickstart Template"
+#define BLYNK_AUTH_TOKEN "lo9x3XRISiW2hWlKhrdW9s7v8KWBoOrH"
+#define BLYNK_PRINT Serial
+#define TINY_GSM_MODEM_SIM800
+#include <TinyGsmClient.h>
+#include <BlynkSimpleTinyGSM.h>
+#define SerialAT Serial2
+
+const int AirValue = 500;   // masukan nilai sebelum kena air
+const int WaterValue = 190;  //masukan nilai setelah kerendam air
+int CapacitiveValue = A0;
+int soilmoisturepercent = 0;
+
+TinyGsm modem(SerialAT);
+BlynkTimer timer;
+char apn[]  = "internet";
+char user[] = "";
+char pass[] = "";
+const int numReadings = 10;
+int readings[numReadings];
+int readIndex = 0;
+int total = 0;
+int average = 0;
+
+
+int Pump = 4 ;
+int WaterValve = 2 ;
+int FuelValve = 3;
+int Buzzer = A15;
+
+String Spump = "";
+String SFuel = "";
+String SWater = "";
+String datamentah = "";
+
+
+
+void setup() {
+  Serial.begin(115200);
+  myNex.begin(9600);
+  SerialAT.begin(9600); 
+
+  pinMode(CapacitiveValue, INPUT);
+  pinMode(Pump, OUTPUT);
+  pinMode(WaterValve, OUTPUT);
+  pinMode(FuelValve, OUTPUT);
+  pinMode(Buzzer, OUTPUT);
+
+  digitalWrite(Pump, HIGH);
+  digitalWrite(WaterValve, HIGH);
+  digitalWrite(FuelValve, HIGH);
+  digitalWrite(Buzzer, LOW);
+
+  Serial.println("Initializing modem...");
+  myNex.writeStr("notif.txt", "Initializing modem...");
+  modem.restart();
+  Blynk.begin(BLYNK_AUTH_TOKEN, modem, apn, user, pass);
+
+  // Setup a function to be called every second
+  timer.setInterval(1000L, myTimerEvent);
+
+}
+
+void loop() {
+  CapacitiveValue = analogRead(A0);
+  total = total - readings[readIndex];
+  readings[readIndex] = CapacitiveValue;
+  total = total + readings[readIndex];
+  readIndex = readIndex + 1;
+  if (readIndex >= numReadings) {
+    readIndex = 0;
+  }
+  average = total / numReadings;
+  Serial.println(average);
+  Serial.println(CapacitiveValue);
+  String datamentah = String(average);
+  myNex.writeStr("index.txt", datamentah);
+  soilmoisturepercent = map(average, WaterValue, AirValue , 100, 0);
+  if (soilmoisturepercent >= 100)
+  {
+    Serial.println("100 %");
+    myNex.writeNum("n0.val", 100);
+  }
+  else if (soilmoisturepercent <= 0)
+  {
+    Serial.println("0 %");
+    myNex.writeNum("n0.val", 0);
+  } 
+  else if (soilmoisturepercent > 0 && soilmoisturepercent < 100)
+  {
+    Serial.print(soilmoisturepercent);
+    String Data = String(soilmoisturepercent);
+    
+    myNex.writeNum("n0.val", soilmoisturepercent);
+    Serial.println("-------------------"+Data);
+  }
+
+   if (soilmoisturepercent >=95) {
+    digitalWrite(Pump, LOW);
+    digitalWrite(WaterValve, LOW);
+    digitalWrite(FuelValve, LOW);
+    myNex.writeStr("pumps.txt", "ON");
+    myNex.writeStr("waters.txt", "ON");
+    myNex.writeStr("fuels.txt", "OFF");
+    myNex.writeStr("notif.txt", "Kandungan Air diatas 95%");
+    Spump = "ON";
+    SWater = "ON";
+    SFuel = "OFF";
+    buzer();
+  }
+
+  else if (soilmoisturepercent <=95) {
+    digitalWrite(Pump, HIGH);
+    digitalWrite(WaterValve, HIGH);
+    digitalWrite(FuelValve, LOW);
+    myNex.writeStr("pumps.txt", "OFF");
+    myNex.writeStr("waters.txt", "OFF");
+    myNex.writeStr("fuels.txt", "ON");
+    myNex.writeStr("notif.txt", "Tidak ada Air");
+    Spump = "OFF";
+    SWater = "OFF";
+    SFuel = "ON";
+
+  delay(200);
+    Blynk.run();
+    timer.run();
+}
+}
+
+void buzer()
+{
+  digitalWrite(Buzzer, LOW);
+  delay(200);
+  digitalWrite(Buzzer, HIGH);
+  delay(50);
+  digitalWrite(Buzzer, LOW);
+}
+
+void myTimerEvent()
+{
+  Blynk.virtualWrite(V0, average);
+  Blynk.virtualWrite(V1, Spump);
+  Blynk.virtualWrite(V2, SWater);
+  Blynk.virtualWrite(V3, SFuel);
+  Blynk.virtualWrite(V4, soilmoisturepercent);
+
+}
