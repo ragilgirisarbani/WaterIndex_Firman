@@ -147,7 +147,7 @@ void buzer()
 
 void myTimerEvent()
 {
-  Blynk.virtualWrite(V0, average);
+  Blynk.virtualWrite(V0, CapacitiveValue);
   Blynk.virtualWrite(V1, Spump);
   Blynk.virtualWrite(V2, SWater);
   Blynk.virtualWrite(V3, SFuel);
