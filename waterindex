@@ -2,7 +2,8 @@
 // by Firman Raharjo
 // Swiss German University
 
-
+#include <EEPROM.h>
+#include "GravityTDS.h"
 #include "EasyNextionLibrary.h"
 EasyNex myNex(Serial1);
 
@@ -14,6 +15,11 @@ EasyNex myNex(Serial1);
 #include <TinyGsmClient.h>
 #include <BlynkSimpleTinyGSM.h>
 #define SerialAT Serial2
+#define TdsSensorPin A1
+#define Pushbutton A3
+GravityTDS gravityTds;
+
+float temperature = 30, tdsValue = 0;
 
 const int AirValue = 500;   // masukan nilai sebelum kena air
 const int WaterValue = 190;  //masukan nilai setelah kerendam air
@@ -37,6 +43,7 @@ int WaterValve = 2 ;
 int FuelValve = 3;
 int Buzzer = A15;
 
+
 String Spump = "";
 String SFuel = "";
 String SWater = "";
@@ -47,9 +54,10 @@ String datamentah = "";
 void setup() {
   Serial.begin(115200);
   myNex.begin(9600);
-  SerialAT.begin(9600); 
+  SerialAT.begin(9600);
 
   pinMode(CapacitiveValue, INPUT);
+  pinMode(Pushbutton, INPUT);
   pinMode(Pump, OUTPUT);
   pinMode(WaterValve, OUTPUT);
   pinMode(FuelValve, OUTPUT);
@@ -59,6 +67,11 @@ void setup() {
   digitalWrite(WaterValve, HIGH);
   digitalWrite(FuelValve, HIGH);
   digitalWrite(Buzzer, LOW);
+
+  gravityTds.setPin(TdsSensorPin);
+  gravityTds.setAref(5.0);
+  gravityTds.setAdcRange(1024);
+  gravityTds.begin();
 
   Serial.println("Initializing modem...");
   myNex.writeStr("notif.txt", "Initializing modem...");
@@ -71,6 +84,8 @@ void setup() {
 }
 
 void loop() {
+  
+
   CapacitiveValue = analogRead(A0);
   total = total - readings[readIndex];
   readings[readIndex] = CapacitiveValue;
@@ -85,6 +100,14 @@ void loop() {
   String datamentah = String(average);
   myNex.writeStr("index.txt", datamentah);
   soilmoisturepercent = map(average, WaterValue, AirValue , 100, 0);
+
+  gravityTds.setTemperature(temperature);  // set the temperature and execute temperature compensation
+  gravityTds.update();  //sample and calculate
+  tdsValue = gravityTds.getTdsValue();  // then get the value
+  Serial.print(tdsValue, 0);
+  Serial.println("ppm");
+  myNex.writeNum("n1.val", tdsValue);
+
   if (soilmoisturepercent >= 100)
   {
     Serial.println("100 %");
@@ -94,46 +117,73 @@ void loop() {
   {
     Serial.println("0 %");
     myNex.writeNum("n0.val", 0);
-  } 
+  }
   else if (soilmoisturepercent > 0 && soilmoisturepercent < 100)
   {
-    Serial.print(soilmoisturepercent);
+//    Serial.print(soilmoisturepercent);
     String Data = String(soilmoisturepercent);
-    
+
     myNex.writeNum("n0.val", soilmoisturepercent);
-    Serial.println("-------------------"+Data);
+    Serial.println("-------------------" + Data);
   }
 
-   if (soilmoisturepercent >=95) {
+  if (soilmoisturepercent >= 70) {
     digitalWrite(Pump, LOW);
     digitalWrite(WaterValve, LOW);
     digitalWrite(FuelValve, LOW);
     myNex.writeStr("pumps.txt", "ON");
     myNex.writeStr("waters.txt", "ON");
     myNex.writeStr("fuels.txt", "OFF");
-    myNex.writeStr("notif.txt", "Kandungan Air diatas 95%");
+    myNex.writeStr("notif.txt", "Kandungan Air diatas 70%");
     Spump = "ON";
     SWater = "ON";
     SFuel = "OFF";
     buzer();
   }
 
-  else if (soilmoisturepercent <=95) {
+
+
+  else if (soilmoisturepercent <= 69) {
     digitalWrite(Pump, HIGH);
     digitalWrite(WaterValve, HIGH);
     digitalWrite(FuelValve, LOW);
     myNex.writeStr("pumps.txt", "OFF");
     myNex.writeStr("waters.txt", "OFF");
     myNex.writeStr("fuels.txt", "ON");
-    myNex.writeStr("notif.txt", "Tidak ada Air");
+    myNex.writeStr("notif.txt", "Kandungan Air kurang dari 70%");
     Spump = "OFF";
     SWater = "OFF";
     SFuel = "ON";
+  }
+  
+  int button = analogRead(Pushbutton);
 
-  delay(200);
+    if ((soilmoisturepercent <= 69) && (button == LOW)) {
+    digitalWrite(Pump, LOW);
+    digitalWrite(WaterValve, HIGH);
+    digitalWrite(FuelValve, LOW);
+    myNex.writeStr("notif.txt", "Manual Switch ON");
+    }
+
+    if (tdsValue>=2){
+    digitalWrite(Pump, LOW);
+    digitalWrite(WaterValve, HIGH);
+    digitalWrite(FuelValve, LOW);
+    myNex.writeStr("notif.txt", "TDS lebih dari 2 ppm");
+    }
+
+    if (tdsValue<=1){
+    digitalWrite(Pump, HIGH);
+    digitalWrite(WaterValve, HIGH);
+    digitalWrite(FuelValve, HIGH);
+    myNex.writeStr("notif.txt", "TDS kurang dari 2 ppm");
+    } 
+    delay(200);
     Blynk.run();
     timer.run();
-}
+
+//    String time = modem.getGSMDateTime(DATE_FULL);
+//    Serial.println("Current Network Time:", time);
 }
 
 void buzer()
@@ -152,5 +202,6 @@ void myTimerEvent()
   Blynk.virtualWrite(V2, SWater);
   Blynk.virtualWrite(V3, SFuel);
   Blynk.virtualWrite(V4, soilmoisturepercent);
+  Blynk.virtualWrite(V5, tdsValue);
 
 }
